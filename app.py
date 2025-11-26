@@ -54,17 +54,29 @@ except Exception as e:
 
 # --- FUNCIONES DE FUTBOL ---
 def get_team_data(team_name: str, league_code: str):
+    """Busca info del equipo en la tabla de posiciones."""
     url = BASE_URL + f"competitions/{league_code}/standings"
     headers = {"X-Auth-Token": FOOTBALL_API_KEY}
     try:
         response = requests.get(url, headers=headers)
+        response.raise_for_status()
         data = response.json()
         standings = data["standings"][0]["table"]
+        
+        # Búsqueda: Convertimos todo a minúsculas para comparar mejor
+        busqueda = team_name.lower()
+        
         for team in standings:
-            if team_name.lower() in team["team"]["name"].lower():
-                return f"{team['team']['name']} está puesto #{team['position']} con {team['points']} puntos."
-        return "No encontré ese equipo en esta liga, che."
-    except: return "Hubo un error consultando la API de fútbol."
+            nombre_api = team["team"]["name"].lower()
+            nombre_corto = team["team"].get("shortName", "").lower()
+            
+            # Buscamos si lo que escribió el usuario está en el nombre completo O en el corto
+            if busqueda in nombre_api or busqueda in nombre_corto:
+                return f"¡Lo encontré! {team['team']['name']} está en el puesto #{team['position']} con {team['points']} puntos. Jugó {team['playedGames']} partidos."
+        
+        return f"Busqué '{team_name}' en la {league_code} pero no lo veo en la tabla. ¿Estará bien escrito?"
+    except Exception as e: 
+        return f"Hubo un error técnico consultando la tabla: {str(e)}"
 
 def get_matches(period='TODAY'):
     url = BASE_URL + "matches"
@@ -112,17 +124,25 @@ def consultar_partidos_interactivo(codigo_liga, tipo):
         return "\n\n".join(resultados)
     except Exception as e: return f"🚨 Se rompió algo: {e}"
 
-# --- CONFIGURACIÓN GEMINI ---
+# --- CONFIGURACIÓN GEMINI (MEJORADA) ---
+# Le damos permiso para usar su conocimiento general si no necesita la API
 system_prompt = """
-Sos un asistente experto en fútbol, hablas con modismos argentinos (voseo).
-Solo sabes de las 5 grandes ligas: Premier, La Liga, Bundesliga, Serie A y Ligue 1.
-"""
-tools = [get_team_data, get_matches]
-model_gemini = genai.GenerativeModel(model_name="gemini-2.0-flash-thinking-exp-01-21", tools=tools, system_instruction=system_prompt)
+Sos un asistente experto en fútbol, hablas con modismos argentinos (voseo, "che", "pibe", "joya").
 
-if "chat_history" not in st.session_state:
-    st.session_state.chat_history = []
-    st.session_state.gemini_chat = model_gemini.start_chat(enable_automatic_function_calling=True)
+TUS FUENTES DE INFORMACIÓN:
+1. Para DATOS EN VIVO (próximos partidos, tablas, resultados de ayer/hoy): ESTÁS OBLIGADO a usar las herramientas (tools) `get_team_data` y `get_matches`. No inventes resultados.
+2. Para HISTORIA, CURIOSIDADES O REGLAS (ej: "¿Quién es ídolo del Napoli?", "¿Qué es el offside?"): USA TU PROPIO CONOCIMIENTO. No uses las tools para esto porque van a fallar.
+
+SI LA API FALLA:
+Si intentas usar una tool y da error, pedí disculpas y decí que "la conexión con la AFA está lenta", pero intentá responder con lo que sepas si es posible.
+"""
+
+tools = [get_team_data, get_matches]
+model_gemini = genai.GenerativeModel(
+    model_name="gemini-2.0-flash-thinking-exp-01-21", 
+    tools=tools, 
+    system_instruction=system_prompt
+)
 
 # --- INTERFAZ GRÁFICA ---
 st.title("🤖 Chatbot Futbolero 🇦🇷")
