@@ -168,7 +168,7 @@ with tab2:
                 size = (128, 128)
                 image = ImageOps.fit(image, size, Image.Resampling.LANCZOS)
                 img_array = np.array(image)
-                img_array = img_array.astype('float32') / 255.0
+                img_array = img_array.astype('float32') # Solo convertimos a decimal, NO dividimos
                 img_array = np.expand_dims(img_array, axis=0)
 
                 # 2. Inferencia TFLite
