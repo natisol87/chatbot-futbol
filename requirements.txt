@@ -1,0 +1,6 @@
+streamlit
+google-generativeai
+tensorflow-cpu
+numpy
+requests
+Pillow
