@@ -149,17 +149,19 @@ with tab1:
             except Exception as e:
                 st.error(f"Se pinchó la conexión: {e}")
 
-# --- TAB 2: VISIÓN ARTIFICIAL (LÓGICA TFLITE) ---
+# --- TAB 2: VISIÓN ARTIFICIAL (CORREGIDO CON MEMORIA) ---
 with tab2:
     st.header("Ojo de Halcón (CNN)")
     st.write("Subí la foto de un escudo y te digo de qué liga es.")
     
+    # Usamos una key para saber si cambió el archivo
     uploaded_file = st.file_uploader("Elegí una imagen...", type=["jpg", "png", "jpeg"])
     
     if uploaded_file is not None:
         image = Image.open(uploaded_file).convert("RGB")
         st.image(image, caption='Escudo subido', width=150)
         
+        # BOTÓN 1: ANALIZAR
         if st.button("🔍 Analizar Escudo"):
             with st.spinner('La IA está mirando...'):
                 # 1. Preprocesamiento
@@ -169,7 +171,7 @@ with tab2:
                 img_array = img_array.astype('float32') / 255.0
                 img_array = np.expand_dims(img_array, axis=0)
 
-                # 2. Inferencia con TFLite (Cambió esta parte)
+                # 2. Inferencia TFLite
                 interpreter.set_tensor(input_details[0]['index'], img_array)
                 interpreter.invoke()
                 predictions = interpreter.get_tensor(output_details[0]['index'])
@@ -180,18 +182,35 @@ with tab2:
                 liga_predicha = CLASS_NAMES[class_idx]
                 confianza = 100 * np.max(score)
 
-            st.success(f"👁️ Para mí, es de la **{liga_predicha.replace('-', ' ').title()}** ({confianza:.1f}% seguro).")
+                # 🚨 ACÁ ESTÁ EL TRUCO: GUARDAMOS EN MEMORIA (SESSION STATE)
+                st.session_state['analisis_realizado'] = True
+                st.session_state['liga_detectada'] = liga_predicha
+                st.session_state['confianza'] = confianza
 
-            if liga_predicha in MAPA_LIGAS:
-                codigo = MAPA_LIGAS[liga_predicha]
-                st.info(f"Tengo datos en vivo de la {liga_predicha}. ¿Qué querés ver?")
-                
-                col1, col2 = st.columns(2)
-                with col1:
-                    if st.button("📅 Próximos Partidos"):
-                        st.text(consultar_partidos_interactivo(codigo, 'future'))
-                with col2:
-                    if st.button("⚽ Resultados Pasados"):
-                        st.text(consultar_partidos_interactivo(codigo, 'past'))
-            else:
-                st.warning("Identifiqué la liga, pero mi API no tiene datos en vivo de esta.")
+    # 🚨 ESTO AHORA ESTÁ AFUERA DEL BOTÓN, PERO CHEQUEA LA MEMORIA
+    if 'analisis_realizado' in st.session_state and st.session_state['analisis_realizado']:
+        
+        # Recuperamos los datos de la memoria
+        liga = st.session_state['liga_detectada']
+        confianza = st.session_state['confianza']
+        
+        st.success(f"👁️ Para mí, es de la **{liga.replace('-', ' ').title()}** ({confianza:.1f}% seguro).")
+
+        if liga in MAPA_LIGAS:
+            codigo = MAPA_LIGAS[liga]
+            st.info(f"Tengo datos en vivo de la {liga}. ¿Qué querés ver?")
+            
+            col1, col2 = st.columns(2)
+            
+            # BOTONES SECUNDARIOS (Ahora sí van a funcionar)
+            with col1:
+                if st.button("📅 Próximos Partidos"):
+                    resultado = consultar_partidos_interactivo(codigo, 'future')
+                    st.text_area("Resultados:", value=resultado, height=200)
+            
+            with col2:
+                if st.button("⚽ Resultados Pasados"):
+                    resultado = consultar_partidos_interactivo(codigo, 'past')
+                    st.text_area("Resultados:", value=resultado, height=200)
+        else:
+            st.warning("Identifiqué la liga, pero mi API no tiene datos en vivo de esta.")
