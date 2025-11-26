@@ -78,19 +78,76 @@ def get_team_data(team_name: str, league_code: str):
     except Exception as e: 
         return f"Hubo un error técnico consultando la tabla: {str(e)}"
 
-def get_matches(period='TODAY'):
+def get_matches(period='TODAY', team_name=None):
+    """
+    Busca partidos. 
+    period: 'TODAY', 'TOMORROW', 'YESTERDAY', 'UPCOMING' (7 días).
+    team_name: (Opcional) Filtra por nombre de equipo.
+    """
     url = BASE_URL + "matches"
     headers = {"X-Auth-Token": FOOTBALL_API_KEY}
+    
     today = datetime.now(timezone.utc).date()
-    params = {"dateFrom": today.strftime("%Y-%m-%d"), "dateTo": today.strftime("%Y-%m-%d")}
-    if period == 'TOMORROW':
+    
+    # Lógica de fechas mejorada
+    if period == 'TODAY':
+        date_from = date_to = today.strftime("%Y-%m-%d")
+    elif period == 'TOMORROW':
         t = today + timedelta(days=1)
-        params = {"dateFrom": t.strftime("%Y-%m-%d"), "dateTo": t.strftime("%Y-%m-%d")}
+        date_from = date_to = t.strftime("%Y-%m-%d")
+    elif period == 'YESTERDAY':
+        t = today - timedelta(days=1)
+        date_from = date_to = t.strftime("%Y-%m-%d")
+    elif period == 'UPCOMING': # Próxima semana
+        date_from = today.strftime("%Y-%m-%d")
+        date_to = (today + timedelta(days=7)).strftime("%Y-%m-%d")
+    else:
+        date_from = date_to = today.strftime("%Y-%m-%d")
+
+    params = {"dateFrom": date_from, "dateTo": date_to}
+
     try:
-        res = requests.get(url, headers=headers, params=params).json()
-        matches = [f"{m['homeTeam']['name']} vs {m['awayTeam']['name']}" for m in res.get('matches', [])]
-        return str(matches) if matches else "No hay partidos programados para esta fecha."
-    except: return "Error buscando partidos."
+        response = requests.get(url, headers=headers, params=params)
+        response.raise_for_status() # Esto nos avisará si la API Key está mal (Error 403/401)
+        
+        data = response.json()
+        matches = data.get('matches', [])
+        
+        if not matches:
+            return f"No encontré partidos programados para {period}."
+
+        resultados = []
+        for m in matches:
+            home = m['homeTeam']['name']
+            away = m['awayTeam']['name']
+            
+            # FILTRO POR EQUIPO (Si el usuario pidió 'Bayern')
+            if team_name:
+                # Si el nombre no está en local ni visitante, saltamos este partido
+                if team_name.lower() not in home.lower() and team_name.lower() not in away.lower():
+                    continue
+
+            status = m['status']
+            fecha = m['utcDate'][:10]
+            
+            if status == 'FINISHED':
+                score = m['score']['fullTime']
+                resultados.append(f"✅ {fecha}: {home} ({score['home']}) - ({score['away']}) {away}")
+            else:
+                hora = m['utcDate'][11:16]
+                resultados.append(f"🗓️ {fecha} {hora}: {home} vs {away}")
+        
+        if not resultados:
+            return f"Hay partidos en esa fecha, pero ninguno coincide con '{team_name}'."
+            
+        return "\n".join(resultados)
+
+    except requests.exceptions.HTTPError as e:
+        # Esto imprimirá el error real en la consola de Streamlit para que puedas verlo
+        print(f"Error API: {e}") 
+        return f"Error de autorización con la API de Fútbol (Code {response.status_code}). Revisá la Key."
+    except Exception as e:
+        return f"Error desconocido buscando partidos: {str(e)}"
 
 def consultar_partidos_interactivo(codigo_liga, tipo):
     url = BASE_URL + f"competitions/{codigo_liga}/matches"
@@ -126,19 +183,21 @@ def consultar_partidos_interactivo(codigo_liga, tipo):
 
 # --- CONFIGURACIÓN GEMINI (MEJORADA) ---
 # Le damos permiso para usar su conocimiento general si no necesita la API
+# Actualizamos la definición para que sepa que puede filtrar por equipo
+tools = [get_team_data, get_matches]
+
 system_prompt = """
-Sos un asistente experto en fútbol, hablas con modismos argentinos (voseo, "che", "pibe", "joya").
-
-TUS FUENTES DE INFORMACIÓN:
-1. Para DATOS EN VIVO (próximos partidos, tablas, resultados de ayer/hoy): ESTÁS OBLIGADO a usar las herramientas (tools) `get_team_data` y `get_matches`. No inventes resultados.
-2. Para HISTORIA, CURIOSIDADES O REGLAS (ej: "¿Quién es ídolo del Napoli?", "¿Qué es el offside?"): USA TU PROPIO CONOCIMIENTO. No uses las tools para esto porque van a fallar.
-
-SI LA API FALLA:
-Si intentas usar una tool y da error, pedí disculpas y decí que "la conexión con la AFA está lenta", pero intentá responder con lo que sepas si es posible.
+Sos un asistente experto en fútbol argentino (voseo).
+1. Usá `get_matches(period='YESTERDAY')` si piden partidos de ayer.
+2. Usá `get_matches(period='UPCOMING', team_name='Bayern')` si piden próximos partidos de un equipo.
+3. Si la API falla, decí exactamente el error que te devuelve la herramienta.
 """
 
-tools = [get_team_data, get_matches]
-# ... (Acá arriba está la configuración de Gemini que te pasé antes) ...
+model_gemini = genai.GenerativeModel(
+    model_name="gemini-2.0-flash-thinking-exp-01-21", 
+    tools=tools, 
+    system_instruction=system_prompt
+)
 
 model_gemini = genai.GenerativeModel(
     model_name="gemini-2.0-flash-thinking-exp-01-21", 
