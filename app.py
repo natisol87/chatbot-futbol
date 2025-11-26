@@ -138,15 +138,28 @@ Si intentas usar una tool y da error, pedí disculpas y decí que "la conexión 
 """
 
 tools = [get_team_data, get_matches]
+# ... (Acá arriba está la configuración de Gemini que te pasé antes) ...
+
 model_gemini = genai.GenerativeModel(
     model_name="gemini-2.0-flash-thinking-exp-01-21", 
     tools=tools, 
     system_instruction=system_prompt
 )
 
+# 👇👇👇 PEGAR ESTO QUE ES LO QUE TE FALTA 👇👇👇
+
+# --- INICIALIZACIÓN DE MEMORIA (FUNDAMENTAL) ---
+if "chat_history" not in st.session_state:
+    st.session_state.chat_history = []
+
+if "gemini_chat" not in st.session_state:
+    st.session_state.gemini_chat = model_gemini.start_chat(enable_automatic_function_calling=True)
+
+# 👆👆👆 HASTA ACÁ 👆👆👆
+
 # --- INTERFAZ GRÁFICA ---
-st.title("🤖 Chatbot Futbolero 🇦🇷")
-st.markdown("¡Hola, maestro! Soy tu asistente de fútbol con **Visión Artificial**.")
+st.title("🤖 Chatbot Futbolero")
+# ... (y acá sigue el resto de tu código)
 
 tab1, tab2 = st.tabs(["💬 Chat General", "📸 Analizar Escudo"])
 
